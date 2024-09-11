@@ -70,12 +70,13 @@ function initializeSummarySheet() {
     if (!summarySheet) {
         summarySheet = sheet.insertSheet(summarySheetName);
         summarySheet.appendRow(['Property Name', 'Top-Level URL', 'Last Updated']);
+        // Add this line to resize columns after creating the header row
+        summarySheet.autoResizeColumns(1, 3);
         SpreadsheetApp.getUi().alert('Summary sheet initialized successfully.');
     } else {
         SpreadsheetApp.getUi().alert('Summary sheet already exists.');
     }
 }
-
 /**
  * Prompts the user to add up to 10 property URLs from its sitemap.
  */
@@ -119,6 +120,7 @@ function addProperty() {
             }
 
             const currentTime = new Date();
+            let isFirstEntry = true;
             for (let url of validUrls) {
                 const urlsFromSitemap = getPropertyUrls(url);
 
@@ -129,6 +131,12 @@ function addProperty() {
 
                 const topLevelUrl = getTopLevelDomain(url);
                 summarySheet.appendRow([url, topLevelUrl, currentTime]);
+
+                // Resize columns after the first URL entry
+                if (isFirstEntry) {
+                    summarySheet.autoResizeColumns(1, 3);
+                    isFirstEntry = false;
+                }
 
                 processPropertySheet(url, urlsFromSitemap, currentTime);
             }

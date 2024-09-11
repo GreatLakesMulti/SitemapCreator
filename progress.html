@@ -1,0 +1,21 @@
+<!-- File: progress.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    <h3>Processing URLs...</h3>
+    <div id="progress">0%</div>
+
+    <script>
+      function updateProgress(progress) {
+        document.getElementById('progress').innerHTML = progress + '%';
+      }
+
+      function closeDialog() {
+        google.script.host.close();
+      }
+    </script>
+  </body>
+</html>

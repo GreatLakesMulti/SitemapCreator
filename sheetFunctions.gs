@@ -18,6 +18,8 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
     if (!propertySheet) {
         propertySheet = sheet.insertSheet(sanitizedPropertyName);
         propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level']);
+                // Add this line to resize columns after creating the header row
+        propertySheet.autoResizeColumns(1, 8);
     }
 
     showProgressDialog();
@@ -54,6 +56,8 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
     // Write all data in one batch operation
     if (batchData.length > 0) {
         propertySheet.getRange(propertySheet.getLastRow() + 1, 1, batchData.length, batchData[0].length).setValues(batchData);
+                // Add this line to resize columns after adding the first URL entry
+        propertySheet.autoResizeColumns(1, 8);
     }
 }
 
