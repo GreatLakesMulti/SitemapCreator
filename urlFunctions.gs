@@ -17,7 +17,7 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
         return;
     }
 
-    const groupedUrls = groupUrlsByLevel(urls, sitemapUrl); // Ensure sitemapUrl is passed here
+    const groupedUrls = groupUrlsByLevel(urls, sitemapUrl);
     Logger.log(`Grouped URLs: ${JSON.stringify(groupedUrls)}`);
 
     // Sort groups by level (ascending order, level 1 being the highest)
@@ -44,14 +44,15 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
                 const normalizedUrl = normalizeUrl(url);
                 const metaTitle = fetchMetaTitle(normalizedUrl);
                 const metaDescription = fetchMetaDescription(normalizedUrl);
-                const headerTags = fetchHeaderTags(normalizedUrl); // Fetch header tags
+                const headerTags = fetchHeaderTags(normalizedUrl);
                 const version = `Version ${currentTime.toISOString()}`;
+                const likeCount = fetchLikeCount(normalizedUrl); // This now returns a number or 'Not Available'
 
                 Logger.log(`Appending data for URL: ${normalizedUrl}`);
-                Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}`);
+                Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
 
-                // Append data to the property sheet, converting headerTags object to a string using JSON.stringify
-                propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level]);
+                // Append data to the property sheet, including the like count
+                propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount]);
 
             } catch (error) {
                 Logger.log(`Error processing URL ${url}: ${error.message}`);
@@ -309,5 +310,96 @@ function getTopLevelDomain(url) {
         return hostnameMatch[1];
     } else {
         throw new Error('Invalid URL format');
+    }
+}
+
+/**
+ * Adds a new blog URL to the property sheet and updates like count and target likes.
+ * @param {string} url - The new blog URL to add.
+ * @param {string} propertyName - The name of the property (sheet name).
+ */
+function addNewBlogUrl(url, propertyName) {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sanitizedPropertyName = sanitizeSheetName(propertyName);
+    let propertySheet = sheet.getSheetByName(sanitizedPropertyName);
+    
+    if (!propertySheet) {
+        Logger.log(`Property sheet ${sanitizedPropertyName} not found. Creating new sheet.`);
+        propertySheet = sheet.insertSheet(sanitizedPropertyName);
+        propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
+    }
+
+    if (!isValidUrl(url)) {
+        Logger.log(`Invalid URL: ${url}`);
+        throw new Error(`Invalid URL: ${url}`);
+    }
+
+    const normalizedUrl = normalizeUrl(url);
+    const currentTime = new Date();
+    const metaTitle = fetchMetaTitle(normalizedUrl);
+    const metaDescription = fetchMetaDescription(normalizedUrl);
+    const headerTags = fetchHeaderTags(normalizedUrl);
+    const version = `Version ${currentTime.toISOString()}`;
+    const level = determineUrlLevel(normalizedUrl);
+    const likeCount = 0; // Initialize like count to 0
+    const targetLikes = calculateTargetLikes(normalizedUrl);
+
+    // Append the new row
+    propertySheet.appendRow([
+        normalizedUrl,
+        metaTitle,
+        metaDescription,
+        JSON.stringify(headerTags),
+        version,
+        currentTime,
+        '', // #ofUrls will be updated separately
+        level,
+        likeCount,
+        targetLikes
+    ]);
+
+    // Update #ofUrls for all rows
+    updateTopLevelUrlCount(propertySheet);
+
+    Logger.log(`Added new blog URL: ${normalizedUrl} to sheet ${sanitizedPropertyName}`);
+}
+
+/**
+ * Determines the level of a URL based on its path.
+ * @param {string} url - The URL to analyze.
+ * @returns {number} - The determined level.
+ */
+function determineUrlLevel(url) {
+    const { pathname } = parseUrl(url);
+    const path = pathname.toLowerCase();
+
+    const levelMappings = {
+        1: [/^\/$/, /home$/, /about/, /contact/, /services$/, /products$/, /portfolio$/],
+        2: [/team/, /history/, /services\/[a-z0-9-]+$/, /products\/[a-z0-9-]+$/, /solutions/],
+        3: [/blog$/, /news$/, /press-releases$/, /categories$/, /faq$/],
+        4: [/blog\/[a-z0-9-]+$/, /news\/[a-z0-9-]+$/, /events\/[a-z0-9-]+$/, /products\/details\/[a-z0-9-]+$/]
+    };
+
+    for (let level in levelMappings) {
+        if (levelMappings[level].some(pattern => pattern.test(path))) {
+            return parseInt(level);
+        }
+    }
+
+    return path.split('/').filter(Boolean).length || 1;
+}
+
+/**
+ * Updates the #ofUrls count for all rows in the sheet.
+ * @param {Sheet} sheet - The sheet to update.
+ */
+function updateTopLevelUrlCount(sheet) {
+    const data = sheet.getDataRange().getValues();
+    const urls = data.slice(1).map(row => row[0]); // Assuming URL is in the first column
+    const topLevelUrlCount = countTopLevelUrls(urls);
+
+    // Update #ofUrls for all rows
+    for (let i = 2; i <= sheet.getLastRow(); i++) {
+        sheet.getRange(i, 7).setValue(topLevelUrlCount); // Assuming #ofUrls is in the 7th column
     }
 }

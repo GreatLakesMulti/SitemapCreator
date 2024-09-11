@@ -17,9 +17,7 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
     
     if (!propertySheet) {
         propertySheet = sheet.insertSheet(sanitizedPropertyName);
-        propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level']);
-                // Add this line to resize columns after creating the header row
-        propertySheet.autoResizeColumns(1, 8);
+        propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
     }
 
     showProgressDialog();
@@ -28,7 +26,6 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
     closeProgressDialog();
     processSitemaps(propertyName, propertySheet);
 }
-
 /**
  * Processes URLs and appends metadata such as title and description to the sheet.
  * @param {string[]} urlsFromSitemap - The URLs retrieved from the sitemap.
@@ -48,16 +45,16 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
             const metaTitle = fetchMetaTitle(normalizedUrl);
             const metaDescription = fetchMetaDescription(normalizedUrl);
             const headerTags = fetchHeaderTags(normalizedUrl);
+            const likeCount = fetchLikeCount(normalizedUrl); // Fetch actual like count
+            const targetLikes = calculateTargetLikes(normalizedUrl); // New function to calculate target likes
 
-            batchData.push([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), `Version ${currentTime.toISOString()}`, currentTime, topLevelUrlCount, group.level]);
+            batchData.push([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), `Version ${currentTime.toISOString()}`, currentTime, topLevelUrlCount, group.level, likeCount, targetLikes]);
         });
     });
 
     // Write all data in one batch operation
     if (batchData.length > 0) {
         propertySheet.getRange(propertySheet.getLastRow() + 1, 1, batchData.length, batchData[0].length).setValues(batchData);
-                // Add this line to resize columns after adding the first URL entry
-        propertySheet.autoResizeColumns(1, 8);
     }
 }
 

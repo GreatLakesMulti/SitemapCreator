@@ -61,3 +61,40 @@ function fetchHeaderTags(url) {
         return { H1: [], H2: [], H3: [], H4: [], H5: [], H6: [] };
     }
 }
+
+function calculateTargetLikes(url) {
+    // This is a placeholder function. You should implement your own logic
+    // to determine the target number of likes based on the URL or other factors.
+    // For now, let's return a random number between 50 and 200 as an example.
+    return Math.floor(Math.random() * (200 - 50 + 1)) + 50;
+}
+
+function updateTargetLikesForNewUrl(url, propertySheet) {
+    const targetLikes = calculateTargetLikes(url);
+    const lastRow = propertySheet.getLastRow();
+    propertySheet.getRange(lastRow, 10).setValue(targetLikes); // Assuming 'Target Likes' is in column 10
+}
+
+/**
+ * Fetches the like count from a URL.
+ * @param {string} url - The URL to fetch the like count from.
+ * @returns {number|string} - The like count of the page or 'Not Available' if not present.
+ */
+function fetchLikeCount(url) {
+    try {
+        const response = UrlFetchApp.fetch(url);
+        const htmlContent = response.getContentText();
+        const likeCountMatch = htmlContent.match(/<span aria-hidden="true" class="like-button-with-count__like-count">(\d+)<\/span>/i);
+        
+        if (likeCountMatch) {
+            return parseInt(likeCountMatch[1], 10);
+        } else {
+            // Check if the element exists but is empty
+            const emptyLikeCountMatch = htmlContent.match(/<span aria-hidden="true" class="like-button-with-count__like-count"><\/span>/i);
+            return emptyLikeCountMatch ? 0 : 'Not Available';
+        }
+    } catch (error) {
+        Logger.log(`Error fetching like count for ${url}: ${error.message}`);
+        return 'Not Available';
+    }
+}
