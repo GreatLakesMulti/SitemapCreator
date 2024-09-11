@@ -5,24 +5,55 @@
  */
 
 /**
- * Fetches URLs from a sitemap XML file.
+ * Fetches URLs from a sitemap XML file with improved error handling and retry mechanism.
  * @param {string} sitemapUrl - The URL of the sitemap to fetch.
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 3).
  * @returns {string[]} - An array of valid URLs from the sitemap.
  */
-function fetchSitemapUrls(sitemapUrl) {
-    try {
-        const response = UrlFetchApp.fetch(sitemapUrl, {muteHttpExceptions: true});
-        if (response.getResponseCode() === 404) {
-            Logger.log(`Sitemap not found: ${sitemapUrl}`);
+function fetchSitemapUrls(sitemapUrl, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const response = UrlFetchApp.fetch(sitemapUrl, {muteHttpExceptions: true});
+            const responseCode = response.getResponseCode();
+            Logger.log(`Fetching sitemap: ${sitemapUrl}, Response code: ${responseCode}, Attempt: ${attempt}`);
+
+            switch (responseCode) {
+                case 200:
+                    const contentText = response.getContentText();
+                    const document = XmlService.parse(contentText).getRootElement();
+                    return extractURLs(document, document.getNamespace());
+                case 404:
+                    Logger.log(`Sitemap not found: ${sitemapUrl}`);
+                    return [];
+                case 403:
+                    Logger.log(`Access forbidden to sitemap: ${sitemapUrl}`);
+                    return [];
+                case 500:
+                case 502:
+                case 503:
+                case 504:
+                    if (attempt < maxRetries) {
+                        Logger.log(`Server error (${responseCode}) for sitemap: ${sitemapUrl}. Retrying...`);
+                        Utilities.sleep(1000 * attempt); // Exponential backoff
+                        continue;
+                    }
+                    Logger.log(`Server error (${responseCode}) for sitemap: ${sitemapUrl}. Max retries reached.`);
+                    return [];
+                default:
+                    Logger.log(`Unexpected response code ${responseCode} for sitemap: ${sitemapUrl}`);
+                    return [];
+            }
+        } catch (error) {
+            if (attempt < maxRetries) {
+                Logger.log(`Error fetching sitemap: ${sitemapUrl}, Error: ${error.message}. Retrying...`);
+                Utilities.sleep(1000 * attempt); // Exponential backoff
+                continue;
+            }
+            Logger.log(`Error fetching sitemap: ${sitemapUrl}, Error: ${error.message}. Max retries reached.`);
             return [];
         }
-        const contentText = response.getContentText();
-        const document = XmlService.parse(contentText).getRootElement();
-        return extractURLs(document, document.getNamespace());
-    } catch (error) {
-        Logger.log(`Error fetching sitemap: ${sitemapUrl}, Error: ${error.message}`);
-        return [];
     }
+    return []; // If all retries fail
 }
 /**
  * Extracts URLs and metadata from an XML sitemap document.
@@ -51,22 +82,70 @@ function extractSitemapIndexes(document, namespace) {
 /**
  * Retrieves property URLs from the main sitemap and checks alternate sitemaps if no URLs are found.
  * @param {string} baseUrl - The base URL of the property.
- * @returns {string[]} - An array of URLs from the sitemaps.
+ * @returns {string[]} - An array of URLs from the sitemaps and crawled sources.
  */
 function getPropertyUrls(baseUrl) {
+    const maxRetries = 3;
+    const alternateSitemaps = [
+        'sitemap.xml',
+        'pages-sitemap.xml',
+        'blog-sitemap.xml',
+        'product-sitemap.xml'
+    ];
+    let urlsFromSitemap = [];
+
     try {
-        let urlsFromSitemap = fetchSitemapUrls(`${baseUrl}/sitemap.xml`);
-        if (urlsFromSitemap.length === 0) {
-            const alternateSitemap = `${baseUrl}/pages-sitemap.xml`;
-            urlsFromSitemap = fetchSitemapUrls(alternateSitemap);
+        for (let sitemap of alternateSitemaps) {
+            Logger.log(`Attempting to fetch sitemap: ${baseUrl}/${sitemap}`);
+            urlsFromSitemap = retryFetch(`${baseUrl}/${sitemap}`, maxRetries);
+            if (urlsFromSitemap.length > 0) {
+                Logger.log(`Found ${urlsFromSitemap.length} URLs in ${sitemap}`);
+                break;
+            }
         }
-        return urlsFromSitemap;
+
+        let crawledUrls = [];
+        try {
+            crawledUrls = discoverUrls(baseUrl);
+            Logger.log(`Discovered ${crawledUrls.length} URLs by crawling`);
+        } catch (crawlError) {
+            Logger.log(`Error in discoverUrls: ${crawlError.message}`);
+        }
+
+        // Combine and deduplicate URLs
+        const allUrls = new Set([...urlsFromSitemap, ...crawledUrls]);
+        
+        Logger.log(`Total unique URLs found: ${allUrls.size}`);
+        return Array.from(allUrls);
     } catch (error) {
         Logger.log(`Error in getPropertyUrls: ${error.message}`);
         throw new Error(`Failed to fetch URLs for ${baseUrl}: ${error.message}`);
     }
 }
 
+/**
+ * Retries fetching sitemap URLs with a specified number of attempts.
+ * @param {string} sitemapUrl - The URL of the sitemap to fetch.
+ * @param {number} maxRetries - The maximum number of retry attempts.
+ * @returns {string[]} - An array of URLs from the sitemap.
+ */
+function retryFetch(sitemapUrl, maxRetries) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            Logger.log(`Fetching sitemap: ${sitemapUrl}, Attempt: ${attempt}`);
+            const urls = fetchSitemapUrls(sitemapUrl);
+            if (urls.length > 0) {
+                return urls;
+            }
+        } catch (error) {
+            Logger.log(`Error fetching sitemap (Attempt ${attempt}): ${error.message}`);
+            if (attempt === maxRetries) {
+                Logger.log(`Max retries reached for ${sitemapUrl}`);
+            }
+        }
+    }
+    return [];
+}
 /**
  * Processes multiple sitemaps of a property and appends the data to the sheet.
  * @param {string} primaryUrl - The base URL of the property.

@@ -409,3 +409,53 @@ function updateTopLevelUrlCount(sheet) {
         sheet.getRange(i, 7).setValue(topLevelUrlCount); // Assuming #ofUrls is in the 7th column
     }
 }
+
+function retryFailedUrls(failedUrls, propertySheet, topLevelUrlCount, sitemapUrl, maxRetries = 3) {
+    let retryCount = 0;
+    while (failedUrls.length > 0 && retryCount < maxRetries) {
+        Logger.log(`Retry attempt ${retryCount + 1} for ${failedUrls.length} failed URLs`);
+        const urlsToRetry = failedUrls.map(failed => failed.url);
+        failedUrls = processUrlsToSheet(urlsToRetry, propertySheet, topLevelUrlCount, sitemapUrl);
+        retryCount++;
+    }
+    
+    if (failedUrls.length > 0) {
+        Logger.log(`${failedUrls.length} URLs still failed after ${maxRetries} retries`);
+    }
+}
+
+function discoverUrls(baseUrl, maxDepth = 2) {
+    const discoveredUrls = new Set();
+    const urlsToVisit = [baseUrl];
+    let currentDepth = 0;
+
+    while (urlsToVisit.length > 0 && currentDepth < maxDepth) {
+        const currentUrl = urlsToVisit.shift();
+        if (discoveredUrls.has(currentUrl)) continue;
+
+        try {
+            const response = UrlFetchApp.fetch(currentUrl);
+            const htmlContent = response.getContentText();
+            discoveredUrls.add(currentUrl);
+
+            // Extract links from the page
+            const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/g;
+            let match;
+            while ((match = linkRegex.exec(htmlContent)) !== null) {
+                const link = new URL(match[1], baseUrl).href;
+                if (link.startsWith(baseUrl) && !discoveredUrls.has(link)) {
+                    urlsToVisit.push(link);
+                }
+            }
+        } catch (error) {
+            Logger.log(`Error crawling ${currentUrl}: ${error.message}`);
+        }
+
+        if (urlsToVisit.length === 0) {
+            currentDepth++;
+            urlsToVisit.push(...Array.from(discoveredUrls));
+        }
+    }
+
+    return Array.from(discoveredUrls);
+}

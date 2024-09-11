@@ -11,31 +11,59 @@
  * @param {Date} currentTime - The current date/time for tracking.
  */
 function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet();
-  const sanitizedPropertyName = sanitizeSheetName(propertyName);
-  let propertySheet = sheet.getSheetByName(sanitizedPropertyName);
-  
-  if (!propertySheet) {
-    propertySheet = sheet.insertSheet(sanitizedPropertyName);
-    propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
-  }
-
-  // Process URLs in batches and update progress
-  const batchSize = 10;
-  const totalUrls = urlsFromSitemap.length;
-  for (let i = 0; i < totalUrls; i += batchSize) {
-    const batch = urlsFromSitemap.slice(i, i + batchSize);
-    processUrlsToSheet(batch, propertySheet, topLevelUrlCount, propertyName);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sanitizedPropertyName = sanitizeSheetName(propertyName);
+    let propertySheet = sheet.getSheetByName(sanitizedPropertyName);
     
-    // Update progress
-    const progress = Math.round(((i + batchSize) / totalUrls) * 100);
-    updateClientProgress(progress);
-  }
+    if (!propertySheet) {
+        propertySheet = sheet.insertSheet(sanitizedPropertyName);
+        propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
+    }
 
-  processSitemaps(propertyName, propertySheet);
+    let progressDialog = null;
+    let isProgressDialogCreated = false;
 
-  // Update the timestamp in the summary sheet
-  updateSummarySheetTimestamp(propertyName, currentTime);
+    try {
+        const htmlOutput = HtmlService.createHtmlOutputFromFile('progress.html')
+            .setWidth(300)
+            .setHeight(100);
+        const ui = SpreadsheetApp.getUi();
+        progressDialog = ui.showModelessDialog(htmlOutput, 'Processing URLs');
+        isProgressDialogCreated = true;
+    } catch (error) {
+        Logger.log(`Error creating progress dialog: ${error.message}`);
+    }
+
+    const topLevelUrlCount = countTopLevelUrls(urlsFromSitemap.map(entry => entry[0]));
+    const totalUrls = urlsFromSitemap.length;
+    
+    // Process URLs in batches and update progress
+    const batchSize = 10;
+    for (let i = 0; i < totalUrls; i += batchSize) {
+        const batch = urlsFromSitemap.slice(i, i + batchSize);
+        processUrlsToSheet(batch, propertySheet, topLevelUrlCount, propertyName);
+        
+        // Update progress
+        if (isProgressDialogCreated && progressDialog) {
+            const progress = Math.round(((i + batchSize) / totalUrls) * 100);
+            try {
+                progressDialog.execute(`updateProgress(${progress})`);
+            } catch (error) {
+                Logger.log(`Error updating progress: ${error.message}`);
+            }
+        }
+    }
+
+    // Close the progress dialog
+    if (isProgressDialogCreated && progressDialog) {
+        try {
+            progressDialog.execute('closeDialog()');
+        } catch (error) {
+            Logger.log(`Error closing progress dialog: ${error.message}`);
+        }
+    }
+
+    processSitemaps(propertyName, propertySheet);
 }
 /**
  * Processes URLs and appends the data (meta info, tags, headers) to the given sheet.
@@ -123,13 +151,63 @@ function setupTrigger() {
         .create();
 }
 /**
- * Finalizes the property sheet by sorting, expanding levels, and applying filters.
+ * Finalizes the property sheet by sorting, grouping URLs, and applying filters.
  * @param {Sheet} propertySheet - The sheet to finalize.
  */
 function finalizePropertySheet(propertySheet) {
     sortPropertySheet(propertySheet);
-    autoExpandLevels(propertySheet);
+    groupAndCollapseUrls(propertySheet);
     applyFilterToPropertySheet(propertySheet);
+}
+
+/**
+ * Groups URLs with the same URL and collapses historic versions.
+ * @param {Sheet} propertySheet - The sheet to group and collapse.
+ */
+function groupAndCollapseUrls(propertySheet) {
+    const lastRow = propertySheet.getLastRow();
+    if (lastRow <= 1) return; // No data to process
+
+    const data = propertySheet.getRange(2, 1, lastRow - 1, propertySheet.getLastColumn()).getValues();
+    let currentUrl = '';
+    let groupStart = 2;
+    let latestTimestamp = new Date(0);
+    let latestRow = 2;
+
+    for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const url = row[0];
+        const timestamp = new Date(row[5]); // Assuming timestamp is in column 6
+
+        if (url !== currentUrl) {
+            // New URL group
+            if (i > 0) {
+                // Finish previous group
+                if (groupStart < i + 1) {
+                    propertySheet.getRange(groupStart, 1, i + 1 - groupStart, propertySheet.getLastColumn()).shiftRowGroupDepth(1);
+                    propertySheet.hideRows(groupStart, i + 1 - groupStart);
+                    propertySheet.showRows(latestRow, 1);
+                }
+            }
+            currentUrl = url;
+            groupStart = i + 2; // +2 because data array is 0-indexed and sheet is 1-indexed
+            latestTimestamp = timestamp;
+            latestRow = i + 2;
+        } else {
+            // Same URL group
+            if (timestamp > latestTimestamp) {
+                latestTimestamp = timestamp;
+                latestRow = i + 2;
+            }
+        }
+    }
+
+    // Handle the last group
+    if (groupStart < lastRow) {
+        propertySheet.getRange(groupStart, 1, lastRow - groupStart + 1, propertySheet.getLastColumn()).shiftRowGroupDepth(1);
+        propertySheet.hideRows(groupStart, lastRow - groupStart + 1);
+        propertySheet.showRows(latestRow, 1);
+    }
 }
 
 /**
