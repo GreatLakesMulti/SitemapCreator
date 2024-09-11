@@ -79,6 +79,9 @@ function initializeSummarySheet() {
 /**
  * Prompts the user to add up to 10 property URLs from its sitemap.
  */
+/**
+ * Prompts the user to add up to 10 property URLs from its sitemap.
+ */
 function addProperty() {
     const ui = SpreadsheetApp.getUi();
     const response = ui.prompt(

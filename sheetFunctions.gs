@@ -38,6 +38,7 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
     const urls = urlsFromSitemap.map(entry => entry[0]);
     const groupedUrls = groupUrlsByLevel(urls, sitemapUrl);
     const currentTime = new Date();
+    const batchData = [];
 
     groupedUrls.forEach(group => {
         group.urls.forEach(url => {
@@ -46,11 +47,36 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
             const metaDescription = fetchMetaDescription(normalizedUrl);
             const headerTags = fetchHeaderTags(normalizedUrl);
 
-            propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), `Version ${currentTime.toISOString()}`, currentTime, topLevelUrlCount, group.level]);
+            batchData.push([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), `Version ${currentTime.toISOString()}`, currentTime, topLevelUrlCount, group.level]);
         });
     });
+
+    // Write all data in one batch operation
+    if (batchData.length > 0) {
+        propertySheet.getRange(propertySheet.getLastRow() + 1, 1, batchData.length, batchData[0].length).setValues(batchData);
+    }
 }
 
+function processUrlsBatch() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('URLQueue');
+    const data = sheet.getDataRange().getValues();
+    const batchSize = 50; // Process 50 URLs at a time
+
+    if (data.length > 1) { // Assuming first row is header
+        const batch = data.slice(1, batchSize + 1);
+        // Process this batch
+        processBatch(batch);
+        // Remove processed URLs from the queue
+        sheet.deleteRows(2, batch.length);
+    }
+}
+
+function setupTrigger() {
+    ScriptApp.newTrigger('processUrlsBatch')
+        .timeBased()
+        .everyMinutes(5)
+        .create();
+}
 /**
  * Finalizes the property sheet by sorting, expanding levels, and applying filters.
  * @param {Sheet} propertySheet - The sheet to finalize.

@@ -297,6 +297,17 @@ function parseUrl(url) {
  * @returns {string} - The top-level domain.
  */
 function getTopLevelDomain(url) {
-    const hostname = new URL(url).hostname;
-    return hostname.replace(/^www\./, '');
+    // Ensure the URL has a protocol
+    if (!/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+    }
+    
+    // Use a regular expression to extract the hostname
+    const hostnameMatch = url.match(/^https?:\/\/(?:www\.)?([^\/]+)/i);
+    
+    if (hostnameMatch) {
+        return hostnameMatch[1];
+    } else {
+        throw new Error('Invalid URL format');
+    }
 }

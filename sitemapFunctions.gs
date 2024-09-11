@@ -11,7 +11,11 @@
  */
 function fetchSitemapUrls(sitemapUrl) {
     try {
-        const response = UrlFetchApp.fetch(sitemapUrl);
+        const response = UrlFetchApp.fetch(sitemapUrl, {muteHttpExceptions: true});
+        if (response.getResponseCode() === 404) {
+            Logger.log(`Sitemap not found: ${sitemapUrl}`);
+            return [];
+        }
         const contentText = response.getContentText();
         const document = XmlService.parse(contentText).getRootElement();
         return extractURLs(document, document.getNamespace());
@@ -20,7 +24,6 @@ function fetchSitemapUrls(sitemapUrl) {
         return [];
     }
 }
-
 /**
  * Extracts URLs and metadata from an XML sitemap document.
  * @param {XmlElement} document - The XML document containing the sitemap.
@@ -52,12 +55,17 @@ function extractSitemapIndexes(document, namespace) {
  * @returns {string[]} - An array of URLs from the sitemaps.
  */
 function getPropertyUrls(baseUrl) {
-    let urlsFromSitemap = fetchSitemapUrls(`${baseUrl}/sitemap.xml`);
-    if (urlsFromSitemap.length === 0) {
-        const alternateSitemap = `${baseUrl}/pages-sitemap.xml`;
-        urlsFromSitemap = fetchSitemapUrls(alternateSitemap);
+    try {
+        let urlsFromSitemap = fetchSitemapUrls(`${baseUrl}/sitemap.xml`);
+        if (urlsFromSitemap.length === 0) {
+            const alternateSitemap = `${baseUrl}/pages-sitemap.xml`;
+            urlsFromSitemap = fetchSitemapUrls(alternateSitemap);
+        }
+        return urlsFromSitemap;
+    } catch (error) {
+        Logger.log(`Error in getPropertyUrls: ${error.message}`);
+        throw new Error(`Failed to fetch URLs for ${baseUrl}: ${error.message}`);
     }
-    return urlsFromSitemap;
 }
 
 /**
@@ -67,14 +75,24 @@ function getPropertyUrls(baseUrl) {
  */
 function processSitemaps(primaryUrl, propertySheet) {
     const sitemapUrls = [
+        `${primaryUrl}/sitemap.xml`,
         `${primaryUrl}/pages-sitemap.xml`,
         `${primaryUrl}/blog-categories-sitemap.xml`,
         `${primaryUrl}/blog-posts-sitemap.xml`
     ];
 
     sitemapUrls.forEach(sitemapUrl => {
-        const urlsFromSitemap = fetchSitemapUrls(sitemapUrl);
-        processUrlsToSheet(urlsFromSitemap, propertySheet, urlsFromSitemap.length, sitemapUrl);
+        try {
+            const urlsFromSitemap = fetchSitemapUrls(sitemapUrl);
+            if (urlsFromSitemap.length > 0) {
+                processUrlsToSheet(urlsFromSitemap, propertySheet, urlsFromSitemap.length, sitemapUrl);
+                Logger.log(`Processed ${urlsFromSitemap.length} URLs from ${sitemapUrl}`);
+            } else {
+                Logger.log(`No URLs found in sitemap: ${sitemapUrl}`);
+            }
+        } catch (error) {
+            Logger.log(`Error processing sitemap ${sitemapUrl}: ${error.message}`);
+        }
     });
     finalizePropertySheet(propertySheet);
 }
