@@ -57,3 +57,82 @@ function onOpen() {
         .addItem('Reset App', 'resetApp')
         .addToUi();
 }
+
+/**
+ * Initializes a summary sheet that stores property names and URLs.
+ */
+function initializeSummarySheet() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet();
+    const summarySheetName = 'Properties'; 
+
+    let summarySheet = sheet.getSheetByName(summarySheetName);
+
+    if (!summarySheet) {
+        summarySheet = sheet.insertSheet(summarySheetName);
+        summarySheet.appendRow(['Property Name', 'Top-Level URL', 'Last Updated']);
+        SpreadsheetApp.getUi().alert('Summary sheet initialized successfully.');
+    } else {
+        SpreadsheetApp.getUi().alert('Summary sheet already exists.');
+    }
+}
+
+/**
+ * Prompts the user to add up to 10 property URLs from its sitemap.
+ */
+function addProperty() {
+    const ui = SpreadsheetApp.getUi();
+    const response = ui.prompt(
+        'Add Property',
+        'Enter up to 10 base URLs (e.g., example.com, example2.com):',
+        ui.ButtonSet.OK_CANCEL
+    );
+
+    if (response.getSelectedButton() === ui.Button.OK) {
+        let propertyBaseUrls = response.getResponseText().trim().split(',');
+
+        if (propertyBaseUrls.length > 10) {
+            ui.alert('You can enter up to 10 URLs only. Please try again.');
+            return;
+        }
+
+        propertyBaseUrls = propertyBaseUrls.map(url => url.trim());
+
+        const validUrls = [];
+        for (let url of propertyBaseUrls) {
+            url = normalizeUrl(url);
+            if (isValidUrl(url)) {
+                validUrls.push(url);
+            } else {
+                ui.alert(`Invalid URL entered: ${url}. Please try again.`);
+                return;
+            }
+        }
+
+        try {
+            const summarySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Properties');
+            if (!summarySheet) {
+                ui.alert('Error: Summary sheet does not exist. Please initialize it first.');
+                return;
+            }
+
+            const currentTime = new Date();
+            for (let url of validUrls) {
+                const urlsFromSitemap = getPropertyUrls(url);
+
+                if (urlsFromSitemap.length === 0) {
+                    ui.alert(`No URLs found in the sitemaps for ${url}.`);
+                    continue;
+                }
+
+                const topLevelUrl = getTopLevelDomain(url);
+                summarySheet.appendRow([url, topLevelUrl, currentTime]);
+
+                processPropertySheet(url, urlsFromSitemap, currentTime);
+            }
+        } catch (error) {
+            ui.alert(`Error fetching URLs: ${error.message}`);
+        }
+    } else {
+        ui.alert('Operation cancelled.');
+    }
+}
