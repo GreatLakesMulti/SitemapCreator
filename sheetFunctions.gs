@@ -20,42 +20,95 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
         propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
     }
 
-    showProgressDialog();
+    // Use the progress.html file for the progress dialog
+    const htmlOutput = HtmlService.createHtmlOutputFromFile('progress.html')
+        .setWidth(300)
+        .setHeight(100);
+    const ui = SpreadsheetApp.getUi();
+    const progressDialog = ui.showModelessDialog(htmlOutput, 'Processing URLs');
+
     const topLevelUrlCount = countTopLevelUrls(urlsFromSitemap.map(entry => entry[0]));
-    processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, propertyName);
-    closeProgressDialog();
+    const totalUrls = urlsFromSitemap.length;
+    
+    // Process URLs in batches and update progress
+    const batchSize = 10;
+    for (let i = 0; i < totalUrls; i += batchSize) {
+        const batch = urlsFromSitemap.slice(i, i + batchSize);
+        processUrlsToSheet(batch, propertySheet, topLevelUrlCount, propertyName);
+        
+        // Update progress
+        const progress = Math.round(((i + batchSize) / totalUrls) * 100);
+        progressDialog.execute(`updateProgress(${progress})`);
+    }
+
+    // Close the progress dialog
+    progressDialog.execute('closeDialog()');
+
     processSitemaps(propertyName, propertySheet);
 }
 /**
- * Processes URLs and appends metadata such as title and description to the sheet.
- * @param {string[]} urlsFromSitemap - The URLs retrieved from the sitemap.
+ * Processes URLs and appends the data (meta info, tags, headers) to the given sheet.
+ * @param {string[]} urlsFromSitemap - Array of URLs to process.
  * @param {Sheet} propertySheet - The sheet to append the data.
- * @param {number} topLevelUrlCount - The number of top-level URLs.
- * @param {string} sitemapUrl - The URL of the sitemap from which the URLs were retrieved.
+ * @param {number} topLevelUrlCount - The count of top-level URLs.
+ * @param {string} sitemapUrl - The URL of the sitemap these URLs came from.
  */
 function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, sitemapUrl) {
+    // Extract URLs from the array of arrays
     const urls = urlsFromSitemap.map(entry => entry[0]);
+
+    Logger.log(`Input URLs: ${JSON.stringify(urls)}`);
+    Logger.log(`Sitemap URL: ${sitemapUrl}`);
+
+    if (!Array.isArray(urls)) {
+        Logger.log(`Invalid input: urls is not an array`);
+        return;
+    }
+
     const groupedUrls = groupUrlsByLevel(urls, sitemapUrl);
+    Logger.log(`Grouped URLs: ${JSON.stringify(groupedUrls)}`);
+
+    // Sort groups by level (ascending order, level 1 being the highest)
+    const sortedGroupedUrls = groupedUrls.sort((a, b) => a.level - b.level);
+
+    // Log grouped URLs by level
+    sortedGroupedUrls.forEach(group => {
+        Logger.log(`Level ${group.level}: ${JSON.stringify(group.urls)}`);
+    });
+
     const currentTime = new Date();
-    const batchData = [];
 
-    groupedUrls.forEach(group => {
+    // Process URLs by level
+    sortedGroupedUrls.forEach(group => {
         group.urls.forEach(url => {
-            const normalizedUrl = normalizeUrl(url);
-            const metaTitle = fetchMetaTitle(normalizedUrl);
-            const metaDescription = fetchMetaDescription(normalizedUrl);
-            const headerTags = fetchHeaderTags(normalizedUrl);
-            const likeCount = fetchLikeCount(normalizedUrl); // Fetch actual like count
-            const targetLikes = calculateTargetLikes(normalizedUrl); // New function to calculate target likes
+            if (!isValidUrl(url)) {
+                Logger.log(`Skipping invalid URL: ${url}`);
+                return; // Skip invalid URL
+            }
 
-            batchData.push([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), `Version ${currentTime.toISOString()}`, currentTime, topLevelUrlCount, group.level, likeCount, targetLikes]);
+            try {
+                Logger.log(`Processing URL: ${url} at level ${group.level}`);
+
+                const normalizedUrl = normalizeUrl(url);
+                const metaTitle = fetchMetaTitle(normalizedUrl);
+                const metaDescription = fetchMetaDescription(normalizedUrl);
+                const headerTags = fetchHeaderTags(normalizedUrl);
+                const version = `Version ${currentTime.toISOString()}`;
+                const likeCount = fetchLikeCount(normalizedUrl); // This now returns a number or 'Not Available'
+
+                Logger.log(`Appending data for URL: ${normalizedUrl}`);
+                Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
+
+                // Append data to the property sheet, including the like count
+                propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount]);
+
+            } catch (error) {
+                Logger.log(`Error processing URL ${url}: ${error.message}`);
+            }
         });
     });
 
-    // Write all data in one batch operation
-    if (batchData.length > 0) {
-        propertySheet.getRange(propertySheet.getLastRow() + 1, 1, batchData.length, batchData[0].length).setValues(batchData);
-    }
+    Logger.log(`Finished processing ${groupedUrls.length} URLs and appending to the sheet.`);
 }
 
 function processUrlsBatch() {

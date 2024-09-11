@@ -9,12 +9,15 @@
  */
 function showProgressDialog() {
     const ui = SpreadsheetApp.getUi();
-    const htmlOutput = HtmlService.createHtmlOutput('<p>Processing URLs...</p>')
+    const htmlOutput = HtmlService.createHtmlOutputFromFile('progress.html')
         .setWidth(300)
         .setHeight(100);
     ui.showModelessDialog(htmlOutput, 'Processing URLs');
 }
 
+function updateClientProgress(progress) {
+    return HtmlService.createHtmlOutput(`<script>window.top.updateProgress(${progress});</script>`);
+}
 /**
  * Closes the previously displayed progress dialog in the UI.
  */

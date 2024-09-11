@@ -46,7 +46,12 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
                 const metaDescription = fetchMetaDescription(normalizedUrl);
                 const headerTags = fetchHeaderTags(normalizedUrl);
                 const version = `Version ${currentTime.toISOString()}`;
-                const likeCount = fetchLikeCount(normalizedUrl); // This now returns a number or 'Not Available'
+                
+                // Only fetch like count for blog articles (level 4)
+                let likeCount = 'N/A';
+                if (group.level === 4) {
+                    likeCount = fetchLikeCount(normalizedUrl);
+                }
 
                 Logger.log(`Appending data for URL: ${normalizedUrl}`);
                 Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
@@ -62,6 +67,7 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
 
     Logger.log(`Finished processing ${groupedUrls.length} URLs and appending to the sheet.`);
 }
+
 /**
  * Counts the number of top-level URLs (with only one '/' after the domain).
  * @param {string[]} urls - Array of URLs to count.

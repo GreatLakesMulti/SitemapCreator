@@ -81,6 +81,7 @@ function updateTargetLikesForNewUrl(url, propertySheet) {
  * @returns {number|string} - The like count of the page or 'Not Available' if not present.
  */
 function fetchLikeCount(url) {
+    Logger.log(`Fetching like count for blog article: ${url}`);
     try {
         const response = UrlFetchApp.fetch(url);
         const htmlContent = response.getContentText();

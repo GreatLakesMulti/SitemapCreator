@@ -37,7 +37,6 @@ function extractURLs(document, namespace) {
         return [loc];
     });
 }
-
 /**
  * Extracts sitemap URLs from a sitemap index file.
  * @param {XmlElement} document - The XML document containing the sitemap index.
