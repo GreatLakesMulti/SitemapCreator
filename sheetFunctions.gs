@@ -11,40 +11,31 @@
  * @param {Date} currentTime - The current date/time for tracking.
  */
 function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet();
-    const sanitizedPropertyName = sanitizeSheetName(propertyName);
-    let propertySheet = sheet.getSheetByName(sanitizedPropertyName);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sanitizedPropertyName = sanitizeSheetName(propertyName);
+  let propertySheet = sheet.getSheetByName(sanitizedPropertyName);
+  
+  if (!propertySheet) {
+    propertySheet = sheet.insertSheet(sanitizedPropertyName);
+    propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
+  }
+
+  // Process URLs in batches and update progress
+  const batchSize = 10;
+  const totalUrls = urlsFromSitemap.length;
+  for (let i = 0; i < totalUrls; i += batchSize) {
+    const batch = urlsFromSitemap.slice(i, i + batchSize);
+    processUrlsToSheet(batch, propertySheet, topLevelUrlCount, propertyName);
     
-    if (!propertySheet) {
-        propertySheet = sheet.insertSheet(sanitizedPropertyName);
-        propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
-    }
+    // Update progress
+    const progress = Math.round(((i + batchSize) / totalUrls) * 100);
+    updateClientProgress(progress);
+  }
 
-    // Use the progress.html file for the progress dialog
-    const htmlOutput = HtmlService.createHtmlOutputFromFile('progress.html')
-        .setWidth(300)
-        .setHeight(100);
-    const ui = SpreadsheetApp.getUi();
-    const progressDialog = ui.showModelessDialog(htmlOutput, 'Processing URLs');
+  processSitemaps(propertyName, propertySheet);
 
-    const topLevelUrlCount = countTopLevelUrls(urlsFromSitemap.map(entry => entry[0]));
-    const totalUrls = urlsFromSitemap.length;
-    
-    // Process URLs in batches and update progress
-    const batchSize = 10;
-    for (let i = 0; i < totalUrls; i += batchSize) {
-        const batch = urlsFromSitemap.slice(i, i + batchSize);
-        processUrlsToSheet(batch, propertySheet, topLevelUrlCount, propertyName);
-        
-        // Update progress
-        const progress = Math.round(((i + batchSize) / totalUrls) * 100);
-        progressDialog.execute(`updateProgress(${progress})`);
-    }
-
-    // Close the progress dialog
-    progressDialog.execute('closeDialog()');
-
-    processSitemaps(propertyName, propertySheet);
+  // Update the timestamp in the summary sheet
+  updateSummarySheetTimestamp(propertyName, currentTime);
 }
 /**
  * Processes URLs and appends the data (meta info, tags, headers) to the given sheet.
@@ -201,4 +192,83 @@ function applyFilterToPropertySheet(propertySheet) {
         propertySheet.getFilter().remove();
     }
     range.createFilter();
+}
+
+
+/**
+ * Updates all properties by fetching the latest data and refreshing their respective sheets.
+ */
+function updateAllProperties() {
+  const ui = SpreadsheetApp.getUi();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const summarySheet = spreadsheet.getSheetByName('Properties');
+
+  if (!summarySheet) {
+    ui.alert('Error: Summary sheet "Properties" not found. Please initialize the app first.');
+    return;
+  }
+
+  const propertyData = summarySheet.getDataRange().getValues();
+  // Remove header row
+  propertyData.shift();
+
+  if (propertyData.length === 0) {
+    ui.alert('No properties found to update.');
+    return;
+  }
+
+  // Show progress dialog
+  showProgressDialog();
+
+  for (let i = 0; i < propertyData.length; i++) {
+    const [propertyUrl, topLevelUrl, lastUpdated] = propertyData[i];
+    
+    try {
+      const urlsFromSitemap = getPropertyUrls(propertyUrl);
+      
+      if (urlsFromSitemap.length === 0) {
+        Logger.log(`No URLs found in the sitemaps for ${propertyUrl}.`);
+        continue;
+      }
+
+      const currentTime = new Date();
+      processPropertySheet(propertyUrl, urlsFromSitemap, currentTime);
+
+      // Update last updated time in summary sheet
+      summarySheet.getRange(i + 2, 3).setValue(currentTime);
+
+      // Update progress
+      const progress = Math.round(((i + 1) / propertyData.length) * 100);
+      updateClientProgress(progress);
+
+    } catch (error) {
+      Logger.log(`Error updating property ${propertyUrl}: ${error.message}`);
+    }
+  }
+
+  // Close progress dialog
+  closeProgressDialog();
+
+  ui.alert('All properties have been updated successfully.');
+}
+/**
+ * Updates the "Last Updated" timestamp for a property in the summary sheet.
+ * @param {string} propertyName - The name of the property to update.
+ * @param {Date} updateTime - The timestamp to set.
+ */
+function updateSummarySheetTimestamp(propertyName, updateTime) {
+  const summarySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Properties');
+  if (!summarySheet) {
+    Logger.log('Summary sheet not found');
+    return;
+  }
+
+  const data = summarySheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === propertyName) {
+      summarySheet.getRange(i + 1, 3).setValue(updateTime);
+      Logger.log(`Updated timestamp for ${propertyName} to ${updateTime}`);
+      break;
+    }
+  }
 }

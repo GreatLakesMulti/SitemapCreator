@@ -57,6 +57,7 @@ function onOpen() {
     ui.createMenu('Property Controller')
         .addItem('Initialize Summary Sheet', 'initializeSummarySheet')
         .addItem('Add Property', 'addProperty')
+        .addItem('Update All Properties', 'updateAllProperties')  // Add this line
         .addItem('Reset App', 'resetApp')
         .addToUi();
 }
@@ -95,14 +96,17 @@ function addProperty() {
     );
 
     if (response.getSelectedButton() === ui.Button.OK) {
+        console.log('User input received:', response.getResponseText());
         let propertyBaseUrls = response.getResponseText().trim().split(',');
 
         if (propertyBaseUrls.length > 10) {
+            console.error('Error: More than 10 URLs entered:', propertyBaseUrls.length);
             ui.alert('You can enter up to 10 URLs only. Please try again.');
             return;
         }
 
         propertyBaseUrls = propertyBaseUrls.map(url => url.trim());
+        console.log('Processed URLs:', propertyBaseUrls);
 
         const validUrls = [];
         for (let url of propertyBaseUrls) {
@@ -110,43 +114,73 @@ function addProperty() {
             if (isValidUrl(url)) {
                 validUrls.push(url);
             } else {
+                console.error('Invalid URL detected:', url);
                 ui.alert(`Invalid URL entered: ${url}. Please try again.`);
                 return;
             }
         }
+        console.log('Valid URLs:', validUrls);
 
         try {
             const summarySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Properties');
             if (!summarySheet) {
+                console.error('Summary sheet not found');
                 ui.alert('Error: Summary sheet does not exist. Please initialize it first.');
                 return;
             }
 
+            showProgressDialog(); // Show progress dialog before processing
+
             const currentTime = new Date();
             let isFirstEntry = true;
-            for (let url of validUrls) {
-                const urlsFromSitemap = getPropertyUrls(url);
+            for (let [index, url] of validUrls.entries()) {
+                console.log('Processing URL:', url);
+                let urlsFromSitemap;
+                try {
+                    urlsFromSitemap = getPropertyUrls(url);
+                    console.log(`URLs found for ${url}:`, urlsFromSitemap.length);
+                } catch (error) {
+                    console.error(`Error fetching URLs for ${url}:`, error);
+                    ui.alert(`Error fetching URLs for ${url}: ${error.message}`);
+                    continue;
+                }
 
                 if (urlsFromSitemap.length === 0) {
+                    console.warn(`No URLs found in the sitemaps for ${url}`);
                     ui.alert(`No URLs found in the sitemaps for ${url}.`);
                     continue;
                 }
 
                 const topLevelUrl = getTopLevelDomain(url);
                 summarySheet.appendRow([url, topLevelUrl, currentTime]);
+                console.log(`Added to summary sheet: ${url}, ${topLevelUrl}, ${currentTime}`);
 
-                // Resize columns after the first URL entry
                 if (isFirstEntry) {
                     summarySheet.autoResizeColumns(1, 3);
                     isFirstEntry = false;
                 }
 
-                processPropertySheet(url, urlsFromSitemap, currentTime);
+                try {
+                    processPropertySheet(url, urlsFromSitemap, currentTime);
+                    console.log(`Processed property sheet for ${url}`);
+                } catch (error) {
+                    console.error(`Error processing property sheet for ${url}:`, error);
+                    ui.alert(`Error processing property sheet for ${url}: ${error.message}`);
+                }
+
+                // Update progress
+                const progress = Math.round(((index + 1) / validUrls.length) * 100);
+                updateClientProgress(progress);
             }
+
+            closeProgressDialog(); // Close progress dialog after processing
         } catch (error) {
-            ui.alert(`Error fetching URLs: ${error.message}`);
+            console.error('General error in addProperty:', error);
+            closeProgressDialog(); // Make sure to close the dialog even if an error occurs
+            ui.alert(`Error: ${error.message}`);
         }
     } else {
+        console.log('Operation cancelled by user');
         ui.alert('Operation cancelled.');
     }
 }
