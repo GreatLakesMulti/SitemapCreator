@@ -20,6 +20,12 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
         propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
     }
 
+    // Ensure urlsFromSitemap is an array
+    if (!Array.isArray(urlsFromSitemap)) {
+        Logger.log(`urlsFromSitemap is not an array for ${propertyName}. Converting to array.`);
+        urlsFromSitemap = urlsFromSitemap ? [urlsFromSitemap] : [];
+    }
+
     let progressDialog = null;
     let isProgressDialogCreated = false;
 
@@ -34,7 +40,7 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
         Logger.log(`Error creating progress dialog: ${error.message}`);
     }
 
-    const topLevelUrlCount = countTopLevelUrls(urlsFromSitemap.map(entry => entry[0]));
+    const topLevelUrlCount = countTopLevelUrls(urlsFromSitemap.map(entry => Array.isArray(entry) ? entry[0] : entry));
     const totalUrls = urlsFromSitemap.length;
     
     // Process URLs in batches and update progress
@@ -65,6 +71,17 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
 
     processSitemaps(propertyName, propertySheet);
 }
+
+function updateProgress(processedUrls, totalUrls, progressDialog, isProgressDialogCreated) {
+    if (isProgressDialogCreated && progressDialog) {
+        const progress = Math.round((processedUrls / totalUrls) * 100);
+        try {
+            progressDialog.execute(`updateProgress(${progress})`);
+        } catch (error) {
+            Logger.log(`Error updating progress: ${error.message}`);
+        }
+    }
+}
 /**
  * Processes URLs and appends the data (meta info, tags, headers) to the given sheet.
  * @param {string[]} urlsFromSitemap - Array of URLs to process.
@@ -87,47 +104,56 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
     const groupedUrls = groupUrlsByLevel(urls, sitemapUrl);
     Logger.log(`Grouped URLs: ${JSON.stringify(groupedUrls)}`);
 
-    // Sort groups by level (ascending order, level 1 being the highest)
-    const sortedGroupedUrls = groupedUrls.sort((a, b) => a.level - b.level);
-
-    // Log grouped URLs by level
-    sortedGroupedUrls.forEach(group => {
-        Logger.log(`Level ${group.level}: ${JSON.stringify(group.urls)}`);
-    });
+    // Sort groups by level (descending order, level 1 being the highest)
+    const sortedGroupedUrls = groupedUrls.sort((a, b) => b.level - a.level);
 
     const currentTime = new Date();
+    const processedUrls = new Set();
 
-    // Process URLs by level
+    // Process Level 1 URLs first
+    const level1Group = sortedGroupedUrls.find(group => group.level === 1);
+    if (level1Group) {
+        processUrlGroup(level1Group, propertySheet, topLevelUrlCount, currentTime, processedUrls);
+    }
+
+    // Process other levels in descending order
     sortedGroupedUrls.forEach(group => {
-        group.urls.forEach(url => {
-            if (!isValidUrl(url)) {
-                Logger.log(`Skipping invalid URL: ${url}`);
-                return; // Skip invalid URL
-            }
-
-            try {
-                Logger.log(`Processing URL: ${url} at level ${group.level}`);
-
-                const normalizedUrl = normalizeUrl(url);
-                const metaTitle = fetchMetaTitle(normalizedUrl);
-                const metaDescription = fetchMetaDescription(normalizedUrl);
-                const headerTags = fetchHeaderTags(normalizedUrl);
-                const version = `Version ${currentTime.toISOString()}`;
-                const likeCount = fetchLikeCount(normalizedUrl); // This now returns a number or 'Not Available'
-
-                Logger.log(`Appending data for URL: ${normalizedUrl}`);
-                Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
-
-                // Append data to the property sheet, including the like count
-                propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount]);
-
-            } catch (error) {
-                Logger.log(`Error processing URL ${url}: ${error.message}`);
-            }
-        });
+        if (group.level !== 1) {
+            processUrlGroup(group, propertySheet, topLevelUrlCount, currentTime, processedUrls);
+        }
     });
 
-    Logger.log(`Finished processing ${groupedUrls.length} URLs and appending to the sheet.`);
+    Logger.log(`Finished processing ${processedUrls.size} URLs and appending to the sheet.`);
+}
+
+function processUrlGroup(group, propertySheet, topLevelUrlCount, currentTime, processedUrls) {
+    group.urls.forEach(url => {
+        if (processedUrls.has(url) || !isValidUrl(url)) {
+            Logger.log(`Skipping already processed or invalid URL: ${url}`);
+            return;
+        }
+
+        try {
+            Logger.log(`Processing URL: ${url} at level ${group.level}`);
+
+            const normalizedUrl = normalizeUrl(url);
+            const metaTitle = fetchMetaTitle(normalizedUrl);
+            const metaDescription = fetchMetaDescription(normalizedUrl);
+            const headerTags = fetchHeaderTags(normalizedUrl);
+            const version = `Version ${currentTime.toISOString()}`;
+            const likeCount = group.level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
+
+            Logger.log(`Appending data for URL: ${normalizedUrl}`);
+            Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
+
+            // Append data to the property sheet
+            propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount]);
+
+            processedUrls.add(url);
+        } catch (error) {
+            Logger.log(`Error processing URL ${url}: ${error.message}`);
+        }
+    });
 }
 
 function processUrlsBatch() {
