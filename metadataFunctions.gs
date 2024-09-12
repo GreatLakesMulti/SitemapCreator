@@ -62,13 +62,15 @@ function fetchHeaderTags(url) {
     }
 }
 
-function calculateTargetLikes(url) {
-    // This is a placeholder function. You should implement your own logic
-    // to determine the target number of likes based on the URL or other factors.
-    // For now, let's return a random number between 50 and 200 as an example.
-    return Math.floor(Math.random() * (200 - 50 + 1)) + 50;
+function calculateTargetLikes(url, level) {
+    // Check if the URL is a blog post (level 4)
+    if (level === 4) {
+        // Generate a random number between 50 and 100 for blog posts
+        return Math.floor(Math.random() * (100 - 50 + 1)) + 50;
+    }
+    // For non-blog URLs, return 'N/A'
+    return 'N/A';
 }
-
 function updateTargetLikesForNewUrl(url, propertySheet) {
     const targetLikes = calculateTargetLikes(url);
     const lastRow = propertySheet.getLastRow();
@@ -85,13 +87,13 @@ function fetchLikeCount(url) {
     try {
         const response = UrlFetchApp.fetch(url);
         const htmlContent = response.getContentText();
-        const likeCountMatch = htmlContent.match(/<span aria-hidden="true" class="like-button-with-count__like-count">(\d+)<\/span>/i);
+        const likeCountMatch = htmlContent.match(/<span[^>]*class="[^"]*like-button-with-count__like-count[^"]*"[^>]*>(\d+)<\/span>/i);
         
         if (likeCountMatch) {
             return parseInt(likeCountMatch[1], 10);
         } else {
             // Check if the element exists but is empty
-            const emptyLikeCountMatch = htmlContent.match(/<span aria-hidden="true" class="like-button-with-count__like-count"><\/span>/i);
+            const emptyLikeCountMatch = htmlContent.match(/<span[^>]*class="[^"]*like-button-with-count__like-count[^"]*"[^>]*><\/span>/i);
             return emptyLikeCountMatch ? 0 : 'Not Available';
         }
     } catch (error) {

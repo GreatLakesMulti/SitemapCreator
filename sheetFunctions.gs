@@ -109,6 +109,7 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
 
     const currentTime = new Date();
     const processedUrls = new Set();
+    const targetLikes = calculateTargetLikes(normalizedUrl); 
 
     // Process Level 1 URLs first
     const level1Group = sortedGroupedUrls.find(group => group.level === 1);
@@ -142,12 +143,13 @@ function processUrlGroup(group, propertySheet, topLevelUrlCount, currentTime, pr
             const headerTags = fetchHeaderTags(normalizedUrl);
             const version = `Version ${currentTime.toISOString()}`;
             const likeCount = group.level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
+            const targetLikes = calculateTargetLikes(normalizedUrl, group.level);
 
             Logger.log(`Appending data for URL: ${normalizedUrl}`);
-            Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
+            Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}, Target Likes: ${targetLikes}`);
 
             // Append data to the property sheet
-            propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount]);
+            propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount, targetLikes]);
 
             processedUrls.add(url);
         } catch (error) {
@@ -313,15 +315,13 @@ function updateAllProperties() {
   }
 
   const propertyData = summarySheet.getDataRange().getValues();
-  // Remove header row
-  propertyData.shift();
+  propertyData.shift(); // Remove header row
 
   if (propertyData.length === 0) {
     ui.alert('No properties found to update.');
     return;
   }
 
-  // Show progress dialog
   showProgressDialog();
 
   for (let i = 0; i < propertyData.length; i++) {
@@ -336,7 +336,13 @@ function updateAllProperties() {
       }
 
       const currentTime = new Date();
-      processPropertySheet(propertyUrl, urlsFromSitemap, currentTime);
+      const propertySheet = spreadsheet.getSheetByName(sanitizeSheetName(propertyUrl));
+
+      if (!propertySheet) {
+        processPropertySheet(propertyUrl, urlsFromSitemap, currentTime);
+      } else {
+        updateExistingPropertySheet(propertySheet, urlsFromSitemap, currentTime);
+      }
 
       // Update last updated time in summary sheet
       summarySheet.getRange(i + 2, 3).setValue(currentTime);
@@ -350,10 +356,88 @@ function updateAllProperties() {
     }
   }
 
-  // Close progress dialog
   closeProgressDialog();
-
   ui.alert('All properties have been updated successfully.');
+}
+
+function updateExistingPropertySheet(propertySheet, urlsFromSitemap, currentTime) {
+  const data = propertySheet.getDataRange().getValues();
+  const headers = data[0];
+  const urlIndex = headers.indexOf('URL');
+  const existingUrls = new Set(data.slice(1).map(row => row[urlIndex]));
+
+  for (const url of urlsFromSitemap) {
+    if (existingUrls.has(url)) {
+      // URL exists, add new version and group/collapse old versions
+      addNewVersionAndGroup(propertySheet, url, currentTime);
+    } else {
+      // New URL, add it to the sheet
+      addNewUrlToSheet(propertySheet, url, currentTime);
+    }
+  }
+
+  // Sort and apply filters
+  sortPropertySheet(propertySheet);
+  applyFilterToPropertySheet(propertySheet);
+}
+
+function addNewVersionAndGroup(propertySheet, url, currentTime) {
+  const data = propertySheet.getDataRange().getValues();
+  const headers = data[0];
+  const urlIndex = headers.indexOf('URL');
+  const versionIndex = headers.indexOf('Version');
+  const timestampIndex = headers.indexOf('Timestamp');
+
+  let groupStart = null;
+  let groupEnd = null;
+
+  // Find the group of rows with the same URL
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][urlIndex] === url) {
+      if (groupStart === null) groupStart = i + 1; // +1 because sheet rows are 1-indexed
+      groupEnd = i + 1;
+    } else if (groupStart !== null) {
+      break;
+    }
+  }
+
+  if (groupStart !== null && groupEnd !== null) {
+    // Add new version at the top of the group
+    const newRow = [...data[groupStart - 1]];
+    newRow[versionIndex] = `Version ${currentTime.toISOString()}`;
+    newRow[timestampIndex] = currentTime;
+    propertySheet.insertRowBefore(groupStart);
+    propertySheet.getRange(groupStart, 1, 1, newRow.length).setValues([newRow]);
+
+    // Group and collapse old versions
+    if (groupEnd - groupStart > 0) {
+      propertySheet.getRange(groupStart + 1, 1, groupEnd - groupStart + 1, propertySheet.getLastColumn()).shiftRowGroupDepth(1);
+      propertySheet.hideRows(groupStart + 1, groupEnd - groupStart + 1);
+    }
+  }
+}
+
+function addNewUrlToSheet(propertySheet, url, currentTime) {
+  const normalizedUrl = normalizeUrl(url);
+  const metaTitle = fetchMetaTitle(normalizedUrl);
+  const metaDescription = fetchMetaDescription(normalizedUrl);
+  const headerTags = fetchHeaderTags(normalizedUrl);
+  const version = `Version ${currentTime.toISOString()}`;
+  const level = determineUrlLevel(normalizedUrl);
+  const likeCount = level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
+  const topLevelUrlCount = countTopLevelUrls(propertySheet.getRange('A:A').getValues().flat());
+
+  propertySheet.appendRow([
+    normalizedUrl,
+    metaTitle,
+    metaDescription,
+    JSON.stringify(headerTags),
+    version,
+    currentTime,
+    topLevelUrlCount,
+    level,
+    likeCount
+  ]);
 }
 /**
  * Updates the "Last Updated" timestamp for a property in the summary sheet.
