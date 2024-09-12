@@ -46,8 +46,6 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
                 const metaDescription = fetchMetaDescription(normalizedUrl);
                 const headerTags = fetchHeaderTags(normalizedUrl);
                 const version = `Version ${currentTime.toISOString()}`;
-                
-                // Only fetch like count for blog articles (level 4)
                 let likeCount = 'N/A';
                 if (group.level === 4) {
                     likeCount = fetchLikeCount(normalizedUrl);
@@ -56,8 +54,8 @@ function processUrlsToSheet(urlsFromSitemap, propertySheet, topLevelUrlCount, si
                 Logger.log(`Appending data for URL: ${normalizedUrl}`);
                 Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}`);
 
-                // Append data to the property sheet, including the like count
-                propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount]);
+                const targetLikes = calculateTargetLikes(normalizedUrl, group.level);
+propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount, targetLikes]);
 
             } catch (error) {
                 Logger.log(`Error processing URL ${url}: ${error.message}`);
@@ -319,6 +317,33 @@ function getTopLevelDomain(url) {
     }
 }
 
+
+
+
+function addNewUrlToSheet(propertySheet, url, currentTime) {
+  const normalizedUrl = normalizeUrl(url);
+  const metaTitle = fetchMetaTitle(normalizedUrl);
+  const metaDescription = fetchMetaDescription(normalizedUrl);
+  const headerTags = fetchHeaderTags(normalizedUrl);
+  const version = `Version ${currentTime.toISOString()}`;
+  const level = determineUrlLevel(normalizedUrl);
+  const likeCount = level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
+  const topLevelUrlCount = countTopLevelUrls(propertySheet.getRange('A:A').getValues().flat());
+  const targetLikes = calculateTargetLikes(normalizedUrl, level); // Add this line
+
+  propertySheet.appendRow([
+    normalizedUrl,
+    metaTitle,
+    metaDescription,
+    JSON.stringify(headerTags),
+    version,
+    currentTime,
+    topLevelUrlCount,
+    level,
+    likeCount,
+    targetLikes // Add this to the row
+  ]);
+}
 /**
  * Adds a new blog URL to the property sheet and updates like count and target likes.
  * @param {string} url - The new blog URL to add.
@@ -347,8 +372,8 @@ function addNewBlogUrl(url, propertyName) {
     const headerTags = fetchHeaderTags(normalizedUrl);
     const version = `Version ${currentTime.toISOString()}`;
     const level = determineUrlLevel(normalizedUrl);
-    const likeCount = 0; // Initialize like count to 0
-    const targetLikes = calculateTargetLikes(normalizedUrl);
+    const likeCount = level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
+    const targetLikes = calculateTargetLikes(normalizedUrl, level); // Add this line
 
     // Append the new row
     propertySheet.appendRow([
@@ -366,6 +391,9 @@ function addNewBlogUrl(url, propertyName) {
 
     // Update #ofUrls for all rows
     updateTopLevelUrlCount(propertySheet);
+
+    // Add this line to update target likes
+    updateTargetLikes(propertySheet);
 
     Logger.log(`Added new blog URL: ${normalizedUrl} to sheet ${sanitizedPropertyName}`);
 }

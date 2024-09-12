@@ -71,11 +71,6 @@ function calculateTargetLikes(url, level) {
     // For non-blog URLs, return 'N/A'
     return 'N/A';
 }
-function updateTargetLikesForNewUrl(url, propertySheet) {
-    const targetLikes = calculateTargetLikes(url);
-    const lastRow = propertySheet.getLastRow();
-    propertySheet.getRange(lastRow, 10).setValue(targetLikes); // Assuming 'Target Likes' is in column 10
-}
 
 /**
  * Fetches the like count from a URL.

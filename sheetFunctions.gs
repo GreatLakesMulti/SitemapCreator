@@ -16,8 +16,17 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
     let propertySheet = sheet.getSheetByName(sanitizedPropertyName);
     
     if (!propertySheet) {
-        propertySheet = sheet.insertSheet(sanitizedPropertyName);
-        propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
+        Logger.log(`Sheet not found. Creating new sheet: ${sanitizedPropertyName}`);
+        try {
+            propertySheet = sheet.insertSheet(sanitizedPropertyName);
+            propertySheet.appendRow(['URL', 'Meta Title', 'Meta Description', 'Header Tags', 'Version', 'Timestamp', '#ofUrls', 'Level', 'Like Count', 'Target Likes']);
+            Logger.log(`New sheet created successfully: ${sanitizedPropertyName}`);
+        } catch (error) {
+            Logger.log(`Error creating sheet: ${error.message}`);
+            throw new Error(`Failed to create sheet for ${propertyName}: ${error.message}`);
+        }
+    } else {
+        Logger.log(`Existing sheet found: ${sanitizedPropertyName}`);
     }
 
     // Ensure urlsFromSitemap is an array
@@ -142,16 +151,38 @@ function processUrlGroup(group, propertySheet, topLevelUrlCount, currentTime, pr
             const metaDescription = fetchMetaDescription(normalizedUrl);
             const headerTags = fetchHeaderTags(normalizedUrl);
             const version = `Version ${currentTime.toISOString()}`;
+            
+            // Fetch like count only for blog articles (level 4)
             const likeCount = group.level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
+            
+            // Calculate target likes based on URL level
             const targetLikes = calculateTargetLikes(normalizedUrl, group.level);
 
             Logger.log(`Appending data for URL: ${normalizedUrl}`);
-            Logger.log(`Meta Title: ${metaTitle}, Meta Description: ${metaDescription}, Header Tags: ${JSON.stringify(headerTags)}, Like Count: ${likeCount}, Target Likes: ${targetLikes}`);
+            Logger.log(`Meta Title: ${metaTitle}`);
+            Logger.log(`Meta Description: ${metaDescription}`);
+            Logger.log(`Header Tags: ${JSON.stringify(headerTags)}`);
+            Logger.log(`Version: ${version}`);
+            Logger.log(`Level: ${group.level}`);
+            Logger.log(`Like Count: ${likeCount}`);
+            Logger.log(`Target Likes: ${targetLikes}`);
 
             // Append data to the property sheet
-            propertySheet.appendRow([normalizedUrl, metaTitle, metaDescription, JSON.stringify(headerTags), version, currentTime, topLevelUrlCount, group.level, likeCount, targetLikes]);
+            propertySheet.appendRow([
+                normalizedUrl,
+                metaTitle,
+                metaDescription,
+                JSON.stringify(headerTags),
+                version,
+                currentTime,
+                topLevelUrlCount,
+                group.level,
+                likeCount,
+                targetLikes
+            ]);
 
             processedUrls.add(url);
+            Logger.log(`Successfully processed URL: ${url}`);
         } catch (error) {
             Logger.log(`Error processing URL ${url}: ${error.message}`);
         }
@@ -244,9 +275,9 @@ function groupAndCollapseUrls(propertySheet) {
  * @returns {string} - The sanitized sheet name.
  */
 function sanitizeSheetName(name) {
-    return name.replace(/[\/\\?*[\]]/g, '_').substring(0, 100);
+    const sanitized = name.replace(/[\/\\?*[\]]/g, '_').replace(/^https?:\/\//, '');
+    return sanitized.substring(0, 100);
 }
-
 /**
  * Sorts the property sheet first by timestamp (descending) and then by URL (ascending).
  * @param {Sheet} propertySheet - The sheet to sort.
@@ -351,6 +382,9 @@ function updateAllProperties() {
       const progress = Math.round(((i + 1) / propertyData.length) * 100);
       updateClientProgress(progress);
 
+        // Add this line to update target likes for all sheets
+        updateTargetLikes();
+
     } catch (error) {
       Logger.log(`Error updating property ${propertyUrl}: ${error.message}`);
     }
@@ -417,30 +451,7 @@ function addNewVersionAndGroup(propertySheet, url, currentTime) {
   }
 }
 
-function addNewUrlToSheet(propertySheet, url, currentTime) {
-  const normalizedUrl = normalizeUrl(url);
-  const metaTitle = fetchMetaTitle(normalizedUrl);
-  const metaDescription = fetchMetaDescription(normalizedUrl);
-  const headerTags = fetchHeaderTags(normalizedUrl);
-  const version = `Version ${currentTime.toISOString()}`;
-  const level = determineUrlLevel(normalizedUrl);
-  const likeCount = level === 4 ? fetchLikeCount(normalizedUrl) : 'N/A';
-  const topLevelUrlCount = countTopLevelUrls(propertySheet.getRange('A:A').getValues().flat());
-
-  propertySheet.appendRow([
-    normalizedUrl,
-    metaTitle,
-    metaDescription,
-    JSON.stringify(headerTags),
-    version,
-    currentTime,
-    topLevelUrlCount,
-    level,
-    likeCount
-  ]);
-}
-/**
- * Updates the "Last Updated" timestamp for a property in the summary sheet.
+/* Updates the "Last Updated" timestamp for a property in the summary sheet.
  * @param {string} propertyName - The name of the property to update.
  * @param {Date} updateTime - The timestamp to set.
  */
@@ -459,4 +470,33 @@ function updateSummarySheetTimestamp(propertyName, updateTime) {
       break;
     }
   }
+}
+
+function updateTargetLikes(propertySheet = null) {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheets = propertySheet ? [propertySheet] : spreadsheet.getSheets();
+
+    sheets.forEach(sheet => {
+        if (sheet.getName() !== 'Properties') {  // Skip the summary sheet
+            const data = sheet.getDataRange().getValues();
+            const headerRow = data[0];
+            const urlIndex = headerRow.indexOf('URL');
+            const levelIndex = headerRow.indexOf('Level');
+            const targetLikesIndex = headerRow.indexOf('Target Likes');
+
+            if (urlIndex === -1 || levelIndex === -1 || targetLikesIndex === -1) {
+                Logger.log(`Required columns not found in sheet: ${sheet.getName()}`);
+                return;
+            }
+
+            for (let i = 1; i < data.length; i++) {  // Start from 1 to skip header
+                const url = data[i][urlIndex];
+                const level = data[i][levelIndex];
+                const targetLikes = calculateTargetLikes(url, level);
+                sheet.getRange(i + 1, targetLikesIndex + 1).setValue(targetLikes);
+            }
+
+            Logger.log(`Updated target likes for ${data.length - 1} URLs in sheet: ${sheet.getName()}`);
+        }
+    });
 }
