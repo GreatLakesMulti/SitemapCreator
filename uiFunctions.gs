@@ -4,10 +4,13 @@
  * File: uiFunctions.gs
  */
 
+let isProcessingStopped = false;
+
 /**
  * Displays a modeless dialog indicating that URLs are being processed.
  */
 function showProgressDialog() {
+    isProcessingStopped = false; // Reset the flag when showing the dialog
     const ui = SpreadsheetApp.getUi();
     const htmlOutput = HtmlService.createHtmlOutputFromFile('progress.html')
         .setWidth(300)
@@ -18,6 +21,7 @@ function showProgressDialog() {
 function updateClientProgress(progress) {
     return HtmlService.createHtmlOutput(`<script>window.top.updateProgress(${progress});</script>`);
 }
+
 /**
  * Closes the previously displayed progress dialog in the UI.
  */
@@ -26,6 +30,12 @@ function closeProgressDialog() {
     ui.showModelessDialog(HtmlService.createHtmlOutput('<script>window.close();</script>'), 'Processing URLs');
 }
 
+/**
+ * Stops the ongoing processing.
+ */
+function stopProcessing() {
+    isProcessingStopped = true;
+}
 /**
  * Resets the application by deleting all sheets except the summary sheet and clearing its contents.
  */

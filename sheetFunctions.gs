@@ -57,7 +57,10 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
     for (let i = 0; i < totalUrls; i += batchSize) {
         const batch = urlsFromSitemap.slice(i, i + batchSize);
         processUrlsToSheet(batch, propertySheet, topLevelUrlCount, propertyName);
-        
+        if (isProcessingStopped) {
+            Logger.log('Processing stopped by user.');
+            break;
+        }
         // Update progress
         if (isProgressDialogCreated && progressDialog) {
             const progress = Math.round(((i + batchSize) / totalUrls) * 100);
@@ -67,6 +70,10 @@ function processPropertySheet(propertyName, urlsFromSitemap, currentTime) {
                 Logger.log(`Error updating progress: ${error.message}`);
             }
         }
+
+         if (!isProcessingStopped) {
+        processSitemaps(propertyName, propertySheet);
+    }
     }
 
     // Close the progress dialog
